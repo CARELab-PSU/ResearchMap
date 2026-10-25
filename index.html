@@ -162,7 +162,7 @@ ul.list .s { grid-column: 2 / 4; font-size: 0.74rem; color: var(--muted); line-h
 @media (max-height: 420px) {
   #years, #search, #legend, #zoom, #brand p, #brand .counts { display: none; }
   #brand h1 { font-size: 1rem; }
-  #preview { display: inline-flex; }
+  #preview { display: inline-flex !important; }
 }
 #preview { display: none; position: absolute; z-index: 5; left: 50%; bottom: 14px; transform: translateX(-50%); align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 0.8rem; font-weight: 600; text-decoration: none; box-shadow: 0 4px 18px rgba(0,0,0,0.4); }
 @media (prefers-reduced-motion: reduce) { #panel, #tip { transition: none; } }
@@ -325,7 +325,7 @@ function drawGlow(k) {
     const x = T.applyX(base.x + d.x * base.s) * f, y = T.applyY(base.y + d.y * base.s) * f;
     if (x < -20 || y < -20 || x > gw + 20 || y > gh + 20) continue;
     gctx.fillStyle = `rgba(255,255,255,${0.05 * d.w})`; gctx.beginPath(); gctx.arc(x, y, rad, 0, 7); gctx.fill(); }
-  const R = 42 * Math.sqrt(k) * f * (W < 760 ? 0.75 : 1);
+  const R = Math.min(42, base.s * 0.12) * Math.sqrt(k) * f * (W < 760 ? 0.75 : 1);
   for (const p of pubs) { if (!visible(p)) continue;
     const x = sx(p) * f, y = sy(p) * f, g = gctx.createRadialGradient(x, y, 0, x, y, R);
     const a = p.type === "journal" ? 0.2 : 0.12;
