@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Interactive map of CARE Lab (Penn State Aerospace Engineering) journal articles, conference papers and theses, grouped by research area.">
+<title>CARE Lab Research Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cardo:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one full-bleed star chart; floating instruments on top (title, year dial, legend, search);
+   a reading panel slides in from the right (bottom sheet on phones). Single dark look by design. */
+:root {
+  --void: #060b1c;          /* deep space navy, derived from the site's #1e407c */
+  --void-2: #0b1430;
+  --glass: rgba(10, 18, 42, 0.82);
+  --ink: #e9edf7;
+  --muted: #95a1c0;
+  --faint: #5d6a8c;
+  --rule: rgba(160, 182, 235, 0.22);
+  --border: rgba(160, 182, 235, 0.18);
+  --journal: #f6b94c;       /* amber */
+  --conference: #6fd0f5;    /* Penn State sky, lifted */
+  --thesis: #f3e9ff;        /* pale star white */
+  --accent: #009cde;
+  --focus: #9fd8ff;
+  --display: "Cardo", "Iowan Old Style", Georgia, serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--void); color: var(--ink);
+  font: 14px/1.5 var(--body); overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+#app { position: relative; height: 100%; overflow: hidden; }
+canvas#map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+canvas#map.pointing { cursor: pointer; }
+canvas#map:active { cursor: grabbing; }
+
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.float { position: absolute; z-index: 5; }
+.glass {
+  background: var(--glass); border: 1px solid var(--border);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border-radius: 10px;
+}
+
+/* title block */
+#brand { top: max(16px, env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px)); max-width: 340px; pointer-events: none; }
+#brand h1 { font: 700 1.6rem/1.1 var(--display); letter-spacing: 0.06em; text-transform: uppercase; margin: 0 0 6px; text-shadow: 0 2px 12px var(--void); }
+#brand p { margin: 0; color: var(--muted); font-size: 0.82rem; text-shadow: 0 1px 8px var(--void); }
+#brand .counts { font-family: var(--mono); font-size: 0.74rem; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+
+/* year dial */
+#years { top: max(16px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; }
+#years button { background: none; border: 1px solid var(--border); border-radius: 999px; width: 30px; height: 30px; display: grid; place-items: center; color: var(--ink); }
+#years button:hover { border-color: var(--muted); }
+#years input[type=range] { width: 180px; accent-color: var(--accent); }
+#years output { font: 500 0.78rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; min-width: 9.5ch; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* legend + view toggles */
+#legend { top: max(16px, env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 4px; padding: 8px; }
+.chip { display: flex; align-items: center; gap: 8px; background: none; border: 0; border-radius: 6px; padding: 5px 8px; font-size: 0.8rem; text-align: left; color: var(--ink); }
+.chip:hover { background: rgba(255,255,255,0.05); }
+.chip[aria-pressed="false"] { color: var(--faint); }
+.chip[aria-pressed="false"] .sw { opacity: 0.25; }
+.chip .n { margin-left: auto; padding-left: 12px; font: 0.72rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.sw { width: 10px; height: 10px; flex: none; border-radius: 50%; }
+.sw.journal { background: var(--journal); box-shadow: 0 0 8px var(--journal); }
+.sw.conference { background: var(--conference); width: 8px; height: 8px; margin: 1px; }
+.sw.thesis { background: var(--thesis); border-radius: 1px; transform: rotate(45deg) scale(0.85); }
+.sw.thread { height: 2px; border-radius: 1px; background: linear-gradient(90deg, var(--conference), var(--journal)); }
+#legend hr { border: 0; border-top: 1px solid var(--rule); margin: 4px 2px; }
+
+/* search */
+#search { bottom: max(16px, env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); width: min(460px, calc(100% - 32px)); display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; }
+#search svg { flex: none; opacity: 0.7; }
+#q { flex: 1; min-width: 0; background: none; border: 0; padding: 8px 0; outline: none; font-size: 0.9rem; }
+#q::placeholder { color: var(--faint); }
+#listBtn { flex: none; border: 1px solid var(--border); background: rgba(255,255,255,0.04); border-radius: 7px; padding: 6px 10px; font-size: 0.78rem; color: var(--ink); }
+#listBtn:hover { border-color: var(--muted); }
+
+/* zoom controls */
+#zoom { bottom: max(16px, env(safe-area-inset-bottom, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; overflow: hidden; }
+#zoom button { width: 34px; height: 32px; background: none; border: 0; font-size: 1.05rem; color: var(--ink); }
+#zoom button + button { border-top: 1px solid var(--border); }
+#zoom button:hover { background: rgba(255,255,255,0.06); }
+
+/* tooltip */
+#tip { position: absolute; z-index: 6; pointer-events: none; max-width: 300px; padding: 8px 10px; font-size: 0.8rem; line-height: 1.35; opacity: 0; transition: opacity .12s; }
+#tip.on { opacity: 1; }
+#tip .k { font: 0.7rem var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
+
+/* panel */
+#panel {
+  position: absolute; z-index: 8; top: 0; right: 0; bottom: 0; width: min(420px, 92vw);
+  background: var(--void-2); border-left: 1px solid var(--border);
+  box-shadow: -20px 0 50px rgba(0,0,0,0.45);
+  transform: translateX(105%); transition: transform .28s ease;
+  display: flex; flex-direction: column;
+  padding-top: env(safe-area-inset-top, 0px); padding-right: env(safe-area-inset-right, 0px);
+}
+#panel.open { transform: none; }
+#panel header { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px 20px; border-bottom: 1px solid var(--rule); }
+#panel header .crumb { flex: 1; min-width: 0; font: 500 0.7rem var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.iconbtn { background: none; border: 1px solid transparent; border-radius: 6px; width: 30px; height: 30px; display: grid; place-items: center; color: var(--ink); flex: none; }
+.iconbtn:hover { border-color: var(--border); }
+#pbody { flex: 1; overflow-y: auto; padding: 18px 20px calc(28px + env(safe-area-inset-bottom, 0px)); overscroll-behavior: contain; }
+#pbody h2 { font: 700 1.45rem/1.18 var(--display); margin: 0 0 10px; text-wrap: balance; }
+#pbody h3 { font: 600 0.7rem var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin: 22px 0 8px; }
+#pbody p { margin: 0 0 10px; color: #c8d0e6; max-width: 62ch; }
+.meta { font: 0.75rem var(--mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 14px; }
+.tag { display: inline-flex; align-items: center; gap: 6px; }
+.authors { line-height: 1.7; margin: 0 0 14px; }
+.authors .a { white-space: nowrap; }
+.authors .me { font-weight: 700; }
+.authors a, .linky { color: var(--conference); text-decoration: underline; text-decoration-color: rgba(111,208,245,0.4); text-underline-offset: 3px; }
+.authors a:hover, .linky:hover { text-decoration-color: currentColor; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 6px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: rgba(255,255,255,0.04); color: var(--ink); border-radius: 7px; padding: 7px 12px; font-size: 0.8rem; text-decoration: none; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.venue { font-style: italic; color: #c8d0e6; margin-bottom: 12px; }
+.note { font-size: 0.78rem; color: var(--muted); }
+
+ul.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+ul.list li button {
+  width: 100%; display: grid; grid-template-columns: 14px 1fr auto; gap: 4px 10px; align-items: start;
+  text-align: left; background: none; border: 0; border-bottom: 1px solid var(--rule); padding: 10px 2px; color: var(--ink);
+}
+ul.list li button:hover { background: rgba(255,255,255,0.035); }
+ul.list .sw { margin-top: 5px; }
+ul.list .t { font-size: 0.86rem; line-height: 1.35; min-width: 0; }
+ul.list .y { font: 0.72rem var(--mono); color: var(--muted); padding-top: 2px; font-variant-numeric: tabular-nums; }
+ul.list .s { grid-column: 2 / 4; font-size: 0.74rem; color: var(--muted); line-height: 1.35; }
+.yearhead { font: 600 0.7rem var(--mono); letter-spacing: 0.1em; color: var(--faint); padding: 14px 0 2px; }
+.people { display: flex; flex-wrap: wrap; gap: 6px; }
+.people button { border: 1px solid var(--border); background: none; color: var(--ink); border-radius: 999px; padding: 4px 10px; font-size: 0.78rem; }
+.people button:hover { border-color: var(--conference); }
+.topicchip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 0.76rem; background: none; color: var(--ink); }
+.topicchip:hover { border-color: var(--muted); }
+
+@media (max-width: 760px) {
+  #brand h1 { font-size: 1.15rem; }
+  #brand p { display: none; }
+  #years { top: auto; bottom: calc(max(16px, env(safe-area-inset-bottom, 0px)) + 56px); }
+  #years input[type=range] { width: 120px; }
+  #legend { padding: 4px; }
+  #legend .chip { padding: 3px 6px; font-size: 0.72rem; }
+  #legend .n, #legend .hide-sm { display: none; }
+  #zoom { display: none; }
+  #panel { top: auto; left: 0; width: auto; height: 68%; border-left: 0; border-top: 1px solid var(--border); border-radius: 14px 14px 0 0; transform: translateY(105%); padding-left: env(safe-area-inset-left, 0px); }
+  #panel.open { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { #panel, #tip { transition: none; } }
+</style>
+
+</head>
+<body>
+<div id="app">
+  <canvas id="map" aria-label="Map of CARE Lab publications grouped by research topic. Use the list view for a text version."></canvas>
+
+  <div id="brand" class="float">
+    <h1>Research Map</h1>
+    <p>Every journal article, conference paper and thesis from the CARE Lab, placed by topic. Similar work sits close together.</p>
+    <div class="counts" id="counts"></div>
+  </div>
+
+  <div id="years" class="float glass" role="group" aria-label="Filter by year">
+    <button id="play" title="Play the lab's history" aria-label="Play the lab's history from the first paper">
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 1.5v9l7.5-4.5z" fill="currentColor"/></svg>
+    </button>
+    <input type="range" id="yr" min="2014" max="2026" step="1" value="2026" aria-label="Show work published up to this year">
+    <output id="yrOut" for="yr">All time</output>
+  </div>
+
+  <div id="legend" class="float glass" role="group" aria-label="Show or hide publication types">
+    <button class="chip" data-type="journal" aria-pressed="true"><span class="sw journal"></span>Journal article<span class="n" id="n-journal"></span></button>
+    <button class="chip" data-type="conference" aria-pressed="true"><span class="sw conference"></span>Conference paper<span class="n" id="n-conference"></span></button>
+    <button class="chip" data-type="thesis" aria-pressed="true"><span class="sw thesis"></span>Thesis<span class="n" id="n-thesis"></span></button>
+    <hr class="hide-sm">
+    <button class="chip hide-sm" id="threadBtn" aria-pressed="true"><span class="sw thread"></span>Conference → journal links</button>
+  </div>
+
+  <div id="search" class="float glass">
+    <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    <input id="q" type="search" placeholder="Search titles, authors, venues…" aria-label="Search publications" autocomplete="off">
+    <button id="listBtn" aria-label="Show every publication as a list">List all</button>
+  </div>
+
+  <div id="zoom" class="float glass" role="group" aria-label="Zoom">
+    <button id="zin" aria-label="Zoom in">+</button>
+    <button id="zout" aria-label="Zoom out">−</button>
+    <button id="zfit" aria-label="Show whole map" title="Show whole map">
+      <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true"><path d="M1 5V1h4M9 1h4v4M13 9v4H9M5 13H1V9" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+    </button>
+  </div>
+
+  <div id="tip" class="glass" role="tooltip"></div>
+
+  <aside id="panel" aria-label="Details" aria-hidden="true">
+    <header>
+      <button class="iconbtn" id="back" aria-label="Back" hidden>
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+      </button>
+      <div class="crumb" id="crumb"></div>
+      <button class="iconbtn" id="close" aria-label="Close panel">
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.6"/></svg>
+      </button>
+    </header>
+    <div id="pbody"></div>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+const DATA = {"topics":[{"key":"DS","name":"Hamiltonian Normal Forms & Dynamical Systems","info":"Perturbation theory, regularized dynamics, chaos and bifurcations, Poincaré sections and normal-form methods that turn complex multi-body dynamics into structures we can reason about, plus coupled orbit–attitude dynamics."},{"key":"CT","name":"Cislunar Transport & Periodic / Quasi-Periodic Orbits","info":"Mapping the transport pathways of cislunar space: periodic and quasi-periodic orbits, invariant tori, momentum maps and transfer and loitering strategies for lunar access."},{"key":"HJ","name":"Hamilton–Jacobi Optimal Control & Guidance","info":"Hamilton–Jacobi theory and optimal control for spacecraft guidance: sparse and semi-analytic HJ solutions, model predictive control, station-keeping and pursuit–evasion."},{"key":"SDA","name":"Space Domain Awareness","info":"Detecting, tracking and characterizing objects beyond GEO: initial orbit determination, uncertainty propagation, reachability, sensor tasking, lightcurves and data-driven model discovery."},{"key":"VN","name":"Vision-Based Navigation & Proximity Operations","info":"Seeing to navigate: terrain-relative navigation, visual odometry, pose estimation, LIDAR simulation and learning-based perception for proximity operations."},{"key":"XR","name":"XR & Visualization","info":"Extended-reality tools that let researchers step inside multi-body dynamics and explore trajectories interactively."}],"pubs":[{"id":"J1","type":"journal","topic":"SDA","year":2026,"title":"Sparse Approximation Method for Accurate Uncertainty Propagation through a Nonlinear System","authors":[{"n":"A. Jain","me":false,"slug":null},{"n":"P. Singla","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null}],"venue":"The Journal of the Astronautical Sciences 73(3), p. 54","doi":"10.1007/s40295-026-00593-z","x":-0.3351,"y":0.4357,"rel":["C34","C55","J8"]},{"id":"J2","type":"journal","topic":"CT","year":2026,"title":"A Fourier–Collocation Framework for Constructing Quasi-Periodic Orbit Families in the CR3BP","authors":[{"n":"E. Lantier","me":false,"slug":"evan-lantier"},{"n":"R. Eapen","me":true,"slug":null}],"venue":"The Journal of the Astronautical Sciences","doi":null,"x":0.6231,"y":-0.4463,"rel":[]},{"id":"J3","type":"journal","topic":"DS","year":2026,"title":"Defining Admissible Control Regions using Hamiltonian Normal Forms of the Circular Restricted Three-Body Problem","authors":[{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"The Journal of the Astronautical Sciences","doi":"10.1007/s40295-026-00605-y","x":0.1948,"y":0.025,"rel":["C40","C5","C29"]},{"id":"J4","type":"journal","topic":"HJ","year":2026,"title":"A Robust Indirect Approach for Minimum-Fuel Transits in the Earth-Moon System","authors":[{"n":"S. Sharan","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null},{"n":"R. Melton","me":false,"slug":null}],"venue":"The Journal of the Astronautical Sciences 73(1), p. 3","doi":"10.1007/s40295-025-00537-z","x":0.7699,"y":0.6152,"rel":["C14"]},{"id":"J5","type":"journal","topic":"CT","year":2025,"title":"Exploration of Direct Transfer Opportunities and Loitering Strategies for Lunar Surface Access","authors":[{"n":"M. E. Mangette","me":false,"slug":"mackenzie-mangette"},{"n":"R. Eapen","me":true,"slug":null}],"venue":"Advances in Space Research","doi":"10.1016/j.asr.2025.11.007","x":0.8954,"y":-0.4583,"rel":["T9","C38","C37"]},{"id":"J6","type":"journal","topic":"CT","year":2025,"title":"Higher-Order Differential Correction Schemes for the Two-Point Boundary Value Problem","authors":[{"n":"S. Sharan","me":false,"slug":null},{"n":"P. Singla","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"R. G. Melton","me":false,"slug":null}],"venue":"Journal of Guidance, Control, and Dynamics 48(7), pp. 1477–1491","doi":"10.2514/1.G008381","x":1.0,"y":-0.2594,"rel":[]},{"id":"J7","type":"journal","topic":"DS","year":2024,"title":"Characterizing Accuracy of Normal Forms to Study Trajectories in Cislunar Space","authors":[{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"The Journal of the Astronautical Sciences 71(2), p. 16","doi":"10.1007/s40295-024-00440-z","x":-0.007,"y":-0.0995,"rel":["C4","C6"]},{"id":"J8","type":"journal","topic":"SDA","year":2023,"title":"Accurate Uncertainty Characterization of Impulsive Thrust Maneuvers in the Restricted Three Body Problem","authors":[{"n":"S. Sharan","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null},{"n":"R. Melton","me":false,"slug":null}],"venue":"The Journal of the Astronautical Sciences 70(5), p. 35","doi":"10.1007/s40295-023-00394-8","x":-0.0938,"y":0.2496,"rel":["C34","C5","J1"]},{"id":"J9","type":"journal","topic":"CT","year":2022,"title":"Momentum Maps and Transport Mechanisms in the Planar Circular Restricted Three-Body Problem","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"K. C. Howell","me":false,"slug":null},{"n":"K. T. Alfriend","me":false,"slug":null}],"venue":"The Journal of the Astronautical Sciences 69(5), pp. 1263–1291","doi":"10.1007/s40295-022-00345-9","x":0.4802,"y":-0.0905,"rel":["C39","C36","T8"]},{"id":"J10","type":"journal","topic":"DS","year":2021,"title":"Attitude Dynamics of a Rigid Body in Keplerian Motion","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"M. Majji","me":false,"slug":null},{"n":"K. T. Alfriend","me":false,"slug":null}],"venue":"Celestial Mechanics and Dynamical Astronomy 133(1), p. 2","doi":"10.1007/s10569-020-10000-w","x":0.1292,"y":-0.3821,"rel":["C56","C54","T12"]},{"id":"J11","type":"journal","topic":"SDA","year":2018,"title":"Averaged Solar Radiation Pressure Modeling for High Area-to-Mass Ratio Objects in Geosynchronous Orbits","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"C. Frueh","me":false,"slug":null}],"venue":"Advances in Space Research 62(1), pp. 127–141","doi":"10.1016/j.asr.2018.03.042","x":-0.8923,"y":0.2064,"rel":["T2"]},{"id":"J12","type":"journal","topic":"CT","year":2014,"title":"A study of halo orbits at the Sun–Mars L1 Lagrangian point in the photogravitational restricted three-body problem","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"R. K. Sharma","me":false,"slug":null}],"venue":"Astrophysics and Space Science 352(2), pp. 437–441","doi":"10.1007/s10509-014-1951-6","x":0.6694,"y":-0.0746,"rel":["C5"]},{"id":"J13","type":"journal","topic":"CT","year":2014,"title":"Mars Interplanetary Trajectory Design via Lagrangian Points","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"R. K. Sharma","me":false,"slug":null}],"venue":"Astrophysics and Space Science 353(1), pp. 65–71","doi":"10.1007/s10509-014-2012-x","x":0.9045,"y":-0.0847,"rel":["T6"]},{"id":"C1","type":"conference","topic":"SDA","year":2026,"title":"Classification of Cislunar Objects Using a Stochastic Admissible Regions Framework","authors":[{"n":"S. Devabhaktuni","me":false,"slug":"sasidhar-devabhaktuni"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Whistler, BC","doi":null,"x":-0.4718,"y":-0.0734,"rel":["C13"]},{"id":"C2","type":"conference","topic":"HJ","year":2026,"title":"Impulse Controlled Poincaré Map (ICPM) Framework for Station-Keeping in Multi-Body Environments","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"N. Kant","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Whistler, BC","doi":null,"x":0.6222,"y":0.4094,"rel":[]},{"id":"C3","type":"conference","topic":"SDA","year":2026,"title":"Observation Scheduling for Cislunar Navigation Using Hamiltonian Normal Form Coordinates","authors":[{"n":"A. Glenn","me":false,"slug":null},{"n":"C. Hunsberger","me":false,"slug":"carson-hunsberger"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Whistler, BC","doi":null,"x":-0.186,"y":0.0849,"rel":["C29","J3","C6"]},{"id":"C4","type":"conference","topic":"DS","year":2026,"title":"Optimal Phasing Maneuvers for Libration Point Trajectories Leveraging Hamiltonian Normal Forms","authors":[{"n":"C. Hunsberger","me":false,"slug":"carson-hunsberger"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Whistler, BC","doi":null,"x":0.056,"y":0.0264,"rel":["C6","C7","C26"]},{"id":"C5","type":"conference","topic":"DS","year":2026,"title":"Hamiltonian Normal Forms of the Photogravitational Elliptic Restricted Three-Body Problem","authors":[{"n":"C. Hunsberger","me":false,"slug":"carson-hunsberger"},{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Whistler, BC","doi":null,"x":0.2192,"y":-0.0356,"rel":["J3","C39","C7"]},{"id":"C6","type":"conference","topic":"DS","year":2026,"title":"Using Hamiltonian Normal Forms for Finite-Horizon Station-Keeping of Libration Point Trajectories","authors":[{"n":"C. Hunsberger","me":false,"slug":"carson-hunsberger"},{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Whistler, BC","doi":null,"x":0.1207,"y":0.0073,"rel":["C4","J3","C18"]},{"id":"C7","type":"conference","topic":"DS","year":2026,"title":"Designing Ballistic Connections between Cislunar Orbits Leveraging Hamiltonian Normal Forms","authors":[{"n":"C. P. Hunsberger","me":false,"slug":"carson-hunsberger"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AIAA SCITECH 2026 Forum, p. 1660","doi":"10.2514/6.2026-1660","x":0.0746,"y":-0.0702,"rel":["C4","C5","J3"]},{"id":"C8","type":"conference","topic":"HJ","year":2026,"title":"Canonical Floquet Modal Control for Station-Keeping Near Periodic Orbits","authors":[{"n":"E. Lantier","me":false,"slug":"evan-lantier"},{"n":"R. Eapen","me":true,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Whistler, BC","doi":null,"x":0.4596,"y":0.4871,"rel":["C18"]},{"id":"C9","type":"conference","topic":"XR","year":2026,"title":"A Real-Time Extended Reality Framework for Interactive Analysis of Multi-Body Dynamics","authors":[{"n":"J. Messner","me":false,"slug":"joseph-messner"},{"n":"C. Cosgrove","me":false,"slug":"christopher-cosgrove"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null},{"n":"V. Whisker","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Whistler, BC","doi":null,"x":0.1918,"y":-0.7448,"rel":["T4"]},{"id":"C10","type":"conference","topic":"SDA","year":2026,"title":"Exploiting Hamiltonian Pseudo-Invariants for Cislunar Initial Orbit Determination","authors":[{"n":"V. Verma","me":false,"slug":"vivek-verma"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Whistler, BC","doi":null,"x":-0.5936,"y":-0.0189,"rel":["T15","T5","C16"]},{"id":"C11","type":"conference","topic":"VN","year":2025,"title":"Development and Validation of Velocimeter LIDAR Simulator","authors":[{"n":"R. Bhaskara","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"M. Majji","me":false,"slug":null}],"venue":"AIAA SCITECH 2025 Forum, p. 2600","doi":"10.2514/6.2025-2600","x":-0.3266,"y":-0.6014,"rel":[]},{"id":"C12","type":"conference","topic":"HJ","year":2025,"title":"Linear Control Law with Guaranteed Asymptotic Stability for Accurate Trajectory Tracking in Bi-Circular Restricted Four Body Problem (BCR4BP)","authors":[{"n":"T. Bhattacharjee","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Kauaʻi, HI","doi":null,"x":0.5121,"y":0.2745,"rel":["C40","C39","J3"]},{"id":"C13","type":"conference","topic":"SDA","year":2025,"title":"Rapid Classification of Near-Earth and Cislunar Objects Using Electro-Optical Observations","authors":[{"n":"J. Diamond","me":false,"slug":null},{"n":"M. Goodman","me":false,"slug":null},{"n":"P. Kent","me":false,"slug":null},{"n":"S. Sawyer","me":false,"slug":null},{"n":"S. Devabhaktuni","me":false,"slug":"sasidhar-devabhaktuni"},{"n":"R. Eapen","me":true,"slug":null},{"n":"J. Hope","me":false,"slug":"jonathon-hope"},{"n":"P. Singla","me":false,"slug":null}],"venue":"Advanced Maui Optical and Space Surveillance Technologies Conference (AMOS), p. 80","doi":"10.64861/wgca5646","x":-0.3507,"y":-0.1234,"rel":["C1","C20"]},{"id":"C14","type":"conference","topic":"HJ","year":2025,"title":"An Indirect Approach to Solve a Three-Dimensional Pursuit-Evasion War Game between Two Spacecraft","authors":[{"n":"A. Funkhouser","me":false,"slug":null},{"n":"S. Sharan","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Kauaʻi, HI","doi":null,"x":0.7865,"y":0.5193,"rel":["J4"]},{"id":"C15","type":"conference","topic":"SDA","year":2025,"title":"Quantifying State Error Growth and Consistency of Uncertainty Propagation Algorithms in Cislunar Space","authors":[{"n":"A. Glenn","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Kauaʻi, HI","doi":null,"x":-0.556,"y":0.3899,"rel":[]},{"id":"C16","type":"conference","topic":"SDA","year":2025,"title":"Multi-Order Single Shooting Scheme for Initial Orbit Determination for Cislunar Objects","authors":[{"n":"J. Hope","me":false,"slug":"jonathon-hope"},{"n":"P. Singla","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Kent","me":false,"slug":null},{"n":"M. Goodman","me":false,"slug":null},{"n":"J. Diamond","me":false,"slug":null}],"venue":"Advanced Maui Optical and Space Surveillance Technologies Conference (AMOS), p. 97","doi":"10.64861/tknv3337","x":-0.387,"y":-0.029,"rel":["C31","C10","T15"]},{"id":"C17","type":"conference","topic":"SDA","year":2025,"title":"Application of Reweighted l1 Minimization to Lightcurve Inversion","authors":[{"n":"C. Hunsberger","me":false,"slug":"carson-hunsberger"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Kauaʻi, HI","doi":null,"x":-0.7469,"y":0.3459,"rel":[]},{"id":"C18","type":"conference","topic":"DS","year":2025,"title":"Comparing Normal Form Representations for Station-Keeping Near Cislunar Libration Points","authors":[{"n":"C. Hunsberger","me":false,"slug":"carson-hunsberger"},{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Kauaʻi, HI","doi":null,"x":0.2936,"y":0.2183,"rel":["C8","C6"]},{"id":"C19","type":"conference","topic":"HJ","year":2025,"title":"A Hamilton-Jacobi Approach for Nonlinear Model Predictive Control in Applications with Navigational Uncertainty","authors":[{"n":"A. Jain","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Kauaʻi, HI","doi":null,"x":0.6079,"y":0.6612,"rel":["C53","C52"]},{"id":"C20","type":"conference","topic":"CT","year":2025,"title":"Frequency Decomposition Based KAM Tori Construction for Near-Earth and Cislunar Orbits","authors":[{"n":"E. Lantier","me":false,"slug":"evan-lantier"},{"n":"R. Eapen","me":true,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Kauaʻi, HI","doi":null,"x":0.7579,"y":-0.202,"rel":["T6","C13"]},{"id":"C21","type":"conference","topic":"HJ","year":2025,"title":"Optimal Control Problem Solving Using Semi-Analytic Hamilton-Jacobi Methods","authors":[{"n":"M. Mangette","me":false,"slug":"mackenzie-mangette"},{"n":"R. Eapen","me":true,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Kauaʻi, HI","doi":null,"x":0.4717,"y":0.6303,"rel":["C53","C52","C26"]},{"id":"C22","type":"conference","topic":"CT","year":2025,"title":"Periodic Orbit Construction in the BCR4BP Using Multi-Order Shooting","authors":[{"n":"S. Sharan","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null},{"n":"R. Melton","me":false,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Kauaʻi, HI","doi":null,"x":0.5164,"y":-0.4577,"rel":["C31","C16"]},{"id":"C23","type":"conference","topic":"VN","year":2025,"title":"Linear Visual Odometry for Autonomous Spacecraft Proximity Operations","authors":[{"n":"G. Sutterlin","me":false,"slug":"graeme-sutterlin"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Boston, MA","doi":null,"x":-0.3702,"y":-0.7681,"rel":["T7","C32"]},{"id":"C24","type":"conference","topic":"DS","year":2025,"title":"Leveraging Momentum Maps for Construction of Pseudo-Constants of Motion in Dynamical Systems","authors":[{"n":"V. Verma","me":false,"slug":"vivek-verma"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null},{"n":"K. C. Howell","me":false,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Kauaʻi, HI","doi":null,"x":0.1938,"y":0.3208,"rel":["J9","T1"]},{"id":"C25","type":"conference","topic":"SDA","year":2024,"title":"Sensor Tasking Strategies for Space-Based Observers in the Cislunar Environment","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"S. N. Paul","me":false,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AIAA SciTech 2024 Forum, p. 1676","doi":"10.2514/6.2024-1676","x":-0.6755,"y":0.5255,"rel":[]},{"id":"C26","type":"conference","topic":"DS","year":2024,"title":"Optimal Control of Cislunar Trajectories Leveraging Normal Form Methods","authors":[{"n":"C. Hunsberger","me":false,"slug":"carson-hunsberger"},{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Broomfield, CO","doi":null,"x":0.134,"y":0.1725,"rel":["C39","C30","C40"]},{"id":"C27","type":"conference","topic":"SDA","year":2024,"title":"Characterization of Axisymmetric Rigid Bodies from Lightcurves via L1 Norm Minimization","authors":[{"n":"C. P. Hunsberger","me":false,"slug":"carson-hunsberger"},{"n":"P. Singla","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null}],"venue":"AIAA SCITECH 2024 Forum, p. 0098","doi":"10.2514/6.2024-0098","x":-0.8505,"y":0.358,"rel":[]},{"id":"C28","type":"conference","topic":"VN","year":2024,"title":"CNN-Based Optical Image Analysis for Satellite Component Detection","authors":[{"n":"J. Murray","me":false,"slug":"joseph-murray"},{"n":"R. Eapen","me":true,"slug":null}],"venue":"AIAA Regional Student Conferences 2024, p. 84515","doi":"10.2514/6.2024-84515","x":-0.5771,"y":-0.4555,"rel":["T13","T11"]},{"id":"C29","type":"conference","topic":"DS","year":2024,"title":"Defining Admissible Maneuvers and Resulting Reachability Sets in the Three-Body Problem Using Hamiltonian Normal Form Methods","authors":[{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"75th International Astronautical Congress (IAC)","doi":"10.52202/078368-0141","x":0.1368,"y":0.0905,"rel":["J3","C40","C39"]},{"id":"C30","type":"conference","topic":"SDA","year":2024,"title":"Reachability Set Search for Lost Custody of Maneuvering Spacecraft Leveraging Normal Form Methods","authors":[{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Broomfield, CO","doi":null,"x":-0.2421,"y":0.2381,"rel":["C26","C39","C29"]},{"id":"C31","type":"conference","topic":"CT","year":2024,"title":"A Multi-Order Shooting Scheme Applied to Low-Thrust Trajectory Optimization","authors":[{"n":"S. Sharan","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null},{"n":"R. Melton","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Broomfield, CO","doi":null,"x":0.4705,"y":-0.3826,"rel":["C16","C22"]},{"id":"C32","type":"conference","topic":"VN","year":2023,"title":"Differentiable Rendering for Pose Estimation in Proximity Operations","authors":[{"n":"R. Bhaskara","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"M. Majji","me":false,"slug":null}],"venue":"AIAA SCITECH 2023 Forum, p. 2317","doi":"10.2514/6.2023-2317","x":-0.4226,"y":-0.692,"rel":["C23","T7"]},{"id":"C33","type":"conference","topic":"SDA","year":2023,"title":"Data-Driven Modeling for Navigation in Cislunar Space","authors":[{"n":"M. Brownell","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null},{"n":"M. Mangette","me":false,"slug":"mackenzie-mangette"}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Big Sky, MT","doi":null,"x":-0.6488,"y":0.1959,"rel":[]},{"id":"C34","type":"conference","topic":"SDA","year":2023,"title":"Leveraging Hamiltonian Structure for Accurate Uncertainty Propagation","authors":[{"n":"A. Jain","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Austin, TX","doi":null,"x":-0.3377,"y":0.3551,"rel":["J1","J8","C48"]},{"id":"C35","type":"conference","topic":"HJ","year":2023,"title":"Sparse Approximate Hamilton-Jacobi Solutions for Optimal Feedback Control with Terminal Constraints","authors":[{"n":"A. Jain","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"62nd IEEE Conference on Decision and Control (CDC), pp. 1269–1274","doi":"10.1109/CDC49753.2023.10384267","x":0.5848,"y":0.7529,"rel":["C21","C52","C53"]},{"id":"C36","type":"conference","topic":"CT","year":2023,"title":"Time-Frequency Analysis for Long-Term Propagation in the Circular Restricted Three-Body Problem","authors":[{"n":"J. Li","me":false,"slug":"jack-li"},{"n":"R. Eapen","me":true,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Big Sky, MT","doi":null,"x":0.5556,"y":-0.0692,"rel":["T8","C39","J9"]},{"id":"C37","type":"conference","topic":"CT","year":2023,"title":"Exploration of Transfer Opportunities to Low Lunar Orbits in the Cislunar Framework","authors":[{"n":"M. Mangette","me":false,"slug":"mackenzie-mangette"},{"n":"R. Eapen","me":true,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Austin, TX","doi":null,"x":0.8147,"y":-0.5167,"rel":["J5","T9"]},{"id":"C38","type":"conference","topic":"CT","year":2023,"title":"Loitering Strategies Leveraging Higher-Order Gravity Expansions for Lunar Surface Access","authors":[{"n":"M. Mangette","me":false,"slug":"mackenzie-mangette"},{"n":"R. Eapen","me":true,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Big Sky, MT","doi":null,"x":0.9287,"y":-0.3742,"rel":["J5","T9"]},{"id":"C39","type":"conference","topic":"DS","year":2023,"title":"Normal Form Methods to Characterize Trajectories in the Circular Restricted Three-Body Problem","authors":[{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Austin, TX","doi":null,"x":0.2832,"y":0.0548,"rel":["C40","C26","J3"]},{"id":"C40","type":"conference","topic":"DS","year":2023,"title":"Normal Form Methods to Define Admissible Control Regions in the Circular Restricted Three-Body Problem","authors":[{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Big Sky, MT","doi":null,"x":0.2438,"y":0.0898,"rel":["J3","C39","C29"]},{"id":"C41","type":"conference","topic":"SDA","year":2023,"title":"Stochastic Analysis of Thrust Uncertainties in the CR3BP","authors":[{"n":"S. Sharan","me":false,"slug":null},{"n":"A. Jain","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null},{"n":"R. Melton","me":false,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting, Austin, TX","doi":null,"x":-0.7908,"y":0.4877,"rel":[]},{"id":"C42","type":"conference","topic":"VN","year":2023,"title":"Vision-Based Terrain Relative Navigation for Planetary Landing","authors":[{"n":"G. E. Sutterlin","me":false,"slug":"graeme-sutterlin"},{"n":"R. Eapen","me":true,"slug":null}],"venue":"AIAA Regional Student Conferences 2023, p. 71389","doi":"10.2514/6.2023-71389","x":-0.607,"y":-0.6374,"rel":["T14","C51","C50"]},{"id":"C43","type":"conference","topic":"SDA","year":2022,"title":"Time-Varying Perturbation Model Identification in the Neighborhood of CR3BP Periodic Orbits","authors":[{"n":"M. Brownell","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null},{"n":"D. Gueho","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Charlotte, NC","doi":null,"x":-0.3613,"y":0.6061,"rel":[]},{"id":"C44","type":"conference","topic":"SDA","year":2022,"title":"Reachability-Based Approach for Search and Detection of Maneuvering Cislunar Objects","authors":[{"n":"Z. Hall","me":false,"slug":null},{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AIAA SCITECH 2022 Forum, p. 0853","doi":"10.2514/6.2022-0853","x":-0.4967,"y":0.1845,"rel":["C30"]},{"id":"C45","type":"conference","topic":"SDA","year":2022,"title":"Orbit Characterization and Determination Strategies in the CR3BP Framework","authors":[{"n":"M. Mayer","me":false,"slug":null},{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Charlotte, NC","doi":null,"x":-0.4647,"y":0.3147,"rel":["C48"]},{"id":"C46","type":"conference","topic":"SDA","year":2022,"title":"Approximating Admissible Control onto the Cislunar Highways for Detection and Tracking of Spacecraft","authors":[{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Charlotte, NC","doi":null,"x":-0.3366,"y":0.1741,"rel":[]},{"id":"C47","type":"conference","topic":"SDA","year":2022,"title":"Reachability Analysis to Track Non-Cooperative Satellite in Cislunar Regime","authors":[{"n":"D. Schwab","me":false,"slug":"david-schwab"},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"International Conference on Dynamic Data Driven Applications Systems (DDDAS), Springer, pp. 105–113","doi":"10.1007/978-3-031-52670-1_10","x":-0.5769,"y":0.6082,"rel":[]},{"id":"C48","type":"conference","topic":"SDA","year":2022,"title":"Coordinate Choice Implications for Uncertainty Propagation in the CR3BP Framework","authors":[{"n":"S. Sharan","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"P. Singla","me":false,"slug":null},{"n":"R. Melton","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Charlotte, NC","doi":null,"x":-0.4689,"y":0.4435,"rel":["C45","C34","J1"]},{"id":"C49","type":"conference","topic":"CT","year":2021,"title":"On the Use of Zero-Momentum Surfaces to Identify Transport Opportunities to Planar Lyapunov Orbits","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"K. C. Howell","me":false,"slug":null},{"n":"K. T. Alfriend","me":false,"slug":null}],"venue":"AAS/AIAA Space Flight Mechanics Meeting (virtual)","doi":null,"x":0.6938,"y":-0.3007,"rel":["J9"]},{"id":"C50","type":"conference","topic":"VN","year":2021,"title":"Relative Navigation of Uncooperative Space Bodies","authors":[{"n":"S. P. Geyer","me":false,"slug":null},{"n":"J. L. Crassidis","me":false,"slug":null},{"n":"M. Majji","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null}],"venue":"AIAA SciTech 2021 Forum, p. 1865","doi":"10.2514/6.2021-1865","x":-0.6759,"y":-0.5578,"rel":["C42","T14","C51"]},{"id":"C51","type":"conference","topic":"VN","year":2021,"title":"Vision and Inertial Sensor Fusion for Terrain Relative Navigation","authors":[{"n":"A. Verras","me":false,"slug":null},{"n":"R. Eapen","me":true,"slug":null},{"n":"A. B. Simon","me":false,"slug":null},{"n":"M. Majji","me":false,"slug":null},{"n":"R. R. Bhaskara","me":false,"slug":null},{"n":"C. I. Restrepo","me":false,"slug":null},{"n":"R. Lovelace","me":false,"slug":null}],"venue":"AIAA SciTech 2021 Forum, p. 0646","doi":"10.2514/6.2021-0646","x":-0.686,"y":-0.6546,"rel":["C42","T14","C50"]},{"id":"C52","type":"conference","topic":"HJ","year":2020,"title":"Semi-Analytic Solutions to the Hamilton-Jacobi Equation with Applications to Orbit Propagation in Perturbed Two-Body Regimes","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"M. Majji","me":false,"slug":null},{"n":"K. T. Alfriend","me":false,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"2020 AAS/AIAA Astrodynamics Specialist Conference, pp. 3403–3422","doi":null,"x":0.4706,"y":0.7293,"rel":["C53","C21","C19"]},{"id":"C53","type":"conference","topic":"HJ","year":2020,"title":"Semi-Analytic Solutions to the Hamilton-Jacobi Equation with Applications to Orbit Propagation in Perturbed Two-Body Regimes","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"M. Majji","me":false,"slug":null},{"n":"K. T. Alfriend","me":false,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference (virtual)","doi":null,"x":0.5107,"y":0.7012,"rel":["C52","C21","C19"]},{"id":"C54","type":"conference","topic":"DS","year":2019,"title":"Extended Phase Space Realization for Attitude Dynamics of an Axisymmetric Body in Eccentric Orbit","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"K. T. Alfriend","me":false,"slug":null},{"n":"M. Majji","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Portland, ME","doi":null,"x":0.1906,"y":-0.2929,"rel":["J10","T12","C56"]},{"id":"C55","type":"conference","topic":"DS","year":2019,"title":"Canonical Transformations via a Sparse Approximation-Based Collocation Method for Dynamical Systems","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"K. T. Alfriend","me":false,"slug":null},{"n":"M. Majji","me":false,"slug":null},{"n":"P. Singla","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Portland, ME","doi":null,"x":0.0674,"y":0.3911,"rel":["J1","T1"]},{"id":"C56","type":"conference","topic":"DS","year":2018,"title":"Equilibria Associated with the Attitude Dynamics of a Rigid Body in Keplerian Motion","authors":[{"n":"R. Eapen","me":true,"slug":null},{"n":"M. Majji","me":false,"slug":null},{"n":"K. T. Alfriend","me":false,"slug":null}],"venue":"AAS/AIAA Astrodynamics Specialist Conference, Snowbird, UT","doi":null,"x":0.119,"y":-0.3307,"rel":["J10","C54","T12"]},{"id":"T1","type":"thesis","topic":"DS","year":2021,"title":"Semi-Analytic Methods for Averaging and Rectification of Complex Dynamical Systems","authors":[{"n":"R. Eapen","me":true,"slug":null}],"venue":"Ph.D. Dissertation, Texas A&M University","doi":null,"x":0.2135,"y":0.4396,"rel":["C21","C24","C55"]},{"id":"T2","type":"thesis","topic":"SDA","year":2017,"title":"Averaged Solar Radiation Pressure Modeling for High Area-to-Mass Ratio Objects in Geostationary Space","authors":[{"n":"R. Eapen","me":true,"slug":null}],"venue":"M.S. Thesis, Purdue University","doi":null,"x":-0.8382,"y":0.1902,"rel":["J11"]},{"id":"T3","type":"thesis","topic":"SDA","year":2024,"title":"Cislunar Transport Characterization for Space Situational Awareness","authors":[{"n":"D. Schwab","me":false,"slug":"david-schwab"}],"venue":"Ph.D. Dissertation, Penn State (co-advised with P. Singla)","doi":null,"x":-0.7462,"y":-0.019,"rel":["T11","T5"]},{"id":"T4","type":"thesis","topic":"XR","year":2025,"title":"A Real-Time Extended Reality Visualization and Analysis Framework for Cislunar Dynamical Environments","authors":[{"n":"C. Cosgrove","me":false,"slug":"christopher-cosgrove"}],"venue":"M.S. Thesis, Penn State","doi":null,"x":0.1515,"y":-0.8248,"rel":["C9"]},{"id":"T5","type":"thesis","topic":"SDA","year":2025,"title":"Transport Mechanisms and Initial Orbit Determination Supporting Cislunar Domain Awareness","authors":[{"n":"J. Hope","me":false,"slug":"jonathon-hope"}],"venue":"M.S. Thesis, Penn State","doi":null,"x":-0.5145,"y":0.0268,"rel":["C10","T15","C16"]},{"id":"T6","type":"thesis","topic":"CT","year":2025,"title":"Frequency-Decomposition-Based Tori Construction for Cislunar Trajectory Design and Characterization","authors":[{"n":"E. Lantier","me":false,"slug":"evan-lantier"}],"venue":"M.S. Thesis, Penn State","doi":null,"x":0.8638,"y":-0.1788,"rel":["C20","J13"]},{"id":"T7","type":"thesis","topic":"VN","year":2026,"title":"Linear Visual Odometry for Autonomous Spacecraft Proximity Operations","authors":[{"n":"G. Sutterlin","me":false,"slug":"graeme-sutterlin"}],"venue":"M.S. Thesis, Penn State","doi":null,"x":-0.4218,"y":-0.7834,"rel":["C23","C32"]},{"id":"T8","type":"thesis","topic":"CT","year":2025,"title":"Time-Frequency Analysis for Long-Term Propagation in the Circular Restricted Three-Body Problem","authors":[{"n":"J. Li","me":false,"slug":"jack-li"}],"venue":"M.S. Thesis, Penn State","doi":null,"x":0.5566,"y":-0.0206,"rel":["C36","C39","J9"]},{"id":"T9","type":"thesis","topic":"CT","year":2023,"title":"Exploration of Direct Transfer Opportunities and Loitering Strategies for Lunar Surface Access","authors":[{"n":"M. E. Mangette","me":false,"slug":"mackenzie-mangette"}],"venue":"M.S. Thesis, Penn State","doi":null,"x":0.8563,"y":-0.4277,"rel":["J5","C38","C37"]},{"id":"T10","type":"thesis","topic":"SDA","year":2026,"title":"Integrated N-Body Conjunction Detection for Computational Efficiency in Satellite Collision Avoidance","authors":[{"n":"D. Rays","me":false,"slug":"diya-rays"}],"venue":"Undergraduate Honors Thesis, Penn State","doi":null,"x":-0.8931,"y":0.0456,"rel":[]},{"id":"T11","type":"thesis","topic":"SDA","year":2026,"title":"Physics-Based Sky-Resolved Satellite Brightness Prediction for Ground-Based Optical Space Situational Awareness","authors":[{"n":"D. Romero","me":false,"slug":"daniel-romero"}],"venue":"Undergraduate Honors Thesis, Penn State","doi":null,"x":-0.7449,"y":-0.1303,"rel":["T3","C28","T13"]},{"id":"T12","type":"thesis","topic":"DS","year":2025,"title":"High-Fidelity Modeling for Coupled Orbit-Attitude Dynamics of Spacecraft","authors":[{"n":"A. Robinson","me":false,"slug":"audra-robinson"}],"venue":"Undergraduate Honors Thesis, Penn State","doi":null,"x":0.0409,"y":-0.3138,"rel":["J10","C54","C56"]},{"id":"T13","type":"thesis","topic":"VN","year":2024,"title":"CNN-based Optical Image Analysis for Satellite Component Detection","authors":[{"n":"J. Murray","me":false,"slug":"joseph-murray"}],"venue":"Undergraduate Honors Thesis, Penn State","doi":null,"x":-0.5268,"y":-0.4758,"rel":["C28","T11"]},{"id":"T14","type":"thesis","topic":"VN","year":2023,"title":"Vision-Based Terrain Relative Navigation for Planetary Landing","authors":[{"n":"G. Sutterlin","me":false,"slug":"graeme-sutterlin"}],"venue":"Undergraduate Honors Thesis, Penn State","doi":null,"x":-0.6199,"y":-0.6855,"rel":["C42","C51","C50"]},{"id":"T15","type":"thesis","topic":"SDA","year":2022,"title":"Application of Initial Orbit Determination Methods to Telescope Observations","authors":[{"n":"C. Hunsberger","me":false,"slug":"carson-hunsberger"}],"venue":"Undergraduate Honors Thesis, Penn State","doi":null,"x":-0.5957,"y":0.0612,"rel":["C10","T5","C16"]}],"threads":[["C40","J3"],["C39","J7"],["C20","J2"],["C20","T6"],["C37","J5"],["C38","J5"],["T9","J5"],["C36","T8"],["C23","T7"],["C42","T14"],["C28","T13"],["C9","T4"],["C16","T5"],["C49","J9"],["C56","J10"],["C41","J8"],["C34","J1"],["T2","J11"],["C52","C53"]],"people":[{"slug":"evan-lantier","n":"E. Lantier","ids":["J2","C8","C20","T6"]},{"slug":"david-schwab","n":"D. Schwab","ids":["J3","J7","C5","C6","C18","C26","C29","C30","C39","C40","C44","C45","C46","C47","T3"]},{"slug":"mackenzie-mangette","n":"M. E. Mangette","ids":["J5","C21","C33","C37","C38","T9"]},{"slug":"sasidhar-devabhaktuni","n":"S. Devabhaktuni","ids":["C1","C13"]},{"slug":"carson-hunsberger","n":"C. Hunsberger","ids":["C3","C4","C5","C6","C7","C17","C18","C26","C27","T15"]},{"slug":"joseph-messner","n":"J. Messner","ids":["C9"]},{"slug":"christopher-cosgrove","n":"C. Cosgrove","ids":["C9","T4"]},{"slug":"vivek-verma","n":"V. Verma","ids":["C10","C24"]},{"slug":"jonathon-hope","n":"J. Hope","ids":["C13","C16","T5"]},{"slug":"graeme-sutterlin","n":"G. Sutterlin","ids":["C23","C42","T7","T14"]},{"slug":"joseph-murray","n":"J. Murray","ids":["C28","T13"]},{"slug":"jack-li","n":"J. Li","ids":["C36","T8"]},{"slug":"diya-rays","n":"D. Rays","ids":["T10"]},{"slug":"daniel-romero","n":"D. Romero","ids":["T11"]},{"slug":"audra-robinson","n":"A. Robinson","ids":["T12"]}],"members":"https://sites.psu.edu/carelab/members/"};
+const MEMBERS = DATA.members;
+const TYPE_LABEL = { journal: "Journal article", conference: "Conference paper", thesis: "Thesis" };
+const TYPE_ORDER = { journal: 0, thesis: 1, conference: 2 };
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const COL = { journal: css("--journal"), conference: css("--conference"), thesis: css("--thesis") };
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const pubs = DATA.pubs;
+const byId = Object.fromEntries(pubs.map(p => [p.id, p]));
+const topics = Object.fromEntries(DATA.topics.map(t => [t.key, t]));
+const people = Object.fromEntries(DATA.people.map(p => [p.slug, p]));
+const threads = DATA.threads.filter(([a, b]) => byId[a] && byId[b]);
+const growsInto = {}, growsFrom = {};
+threads.forEach(([a, b]) => { (growsInto[a] ||= []).push(b); (growsFrom[b] ||= []).push(a); });
+
+// ---- counts ----
+const cnt = t => pubs.filter(p => p.type === t).length;
+["journal", "conference", "thesis"].forEach(t => document.getElementById("n-" + t).textContent = cnt(t));
+document.getElementById("counts").textContent = `${pubs.length} works · ${new Set(pubs.map(p=>p.year)).size} years · ${DATA.topics.length} research areas`;
+
+// ---- state ----
+const state = { year: 2026, types: new Set(["journal", "conference", "thesis"]), threads: true,
+  sel: null, topic: null, person: null, matches: null, hover: null };
+const visible = p => p.year <= state.year && state.types.has(p.type);
+
+// ---- canvas & world ----
+const cv = document.getElementById("map"), ctx = cv.getContext("2d");
+const glow = document.createElement("canvas"), gctx = glow.getContext("2d", { willReadFrequently: true });
+let W = 0, H = 0, DPR = 1, base = { s: 1, x: 0, y: 0 }, T = d3.zoomIdentity;
+const wx = p => base.x + p.x * base.s, wy = p => base.y + p.y * base.s;   // world -> base screen
+const sx = p => T.applyX(wx(p)), sy = p => T.applyY(wy(p));
+
+// nebula dust: deterministic particles around each paper so clusters read as glowing regions
+let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const gauss = () => { let u = 0, v = 0; while (!u) u = rnd(); while (!v) v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+const dust = [];
+pubs.forEach(p => { const n = p.type === "journal" ? 34 : p.type === "thesis" ? 22 : 18;
+  for (let i = 0; i < n; i++) { const r = 0.045 + 0.03 * rnd(); dust.push({ p, x: p.x + gauss() * r, y: p.y + gauss() * r, w: 0.25 + rnd() * 0.75 }); } });
+
+// colour ramp for the glow (navy -> indigo -> violet -> rose -> white)
+const LUT = (() => { const stops = [[0,[6,11,28]],[0.18,[28,30,92]],[0.4,[74,48,160]],[0.62,[154,78,190]],[0.82,[240,140,170]],[1,[255,240,225]]];
+  const out = new Uint8ClampedArray(256 * 3);
+  for (let i = 0; i < 256; i++) { const t = i / 255; let k = 0; while (k < stops.length - 2 && t > stops[k + 1][0]) k++;
+    const [t0, c0] = stops[k], [t1, c1] = stops[k + 1], f = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
+    for (let c = 0; c < 3; c++) out[i * 3 + c] = c0[c] + (c1[c] - c0[c]) * f; }
+  return out; })();
+
+// territory boundaries: Voronoi edges between neighbouring papers of different topics
+let borders = [];
+function computeBorders() {
+  const pts = pubs.map(p => [p.x, p.y]);
+  const del = d3.Delaunay.from(pts), vor = del.voronoi([-1.6, -1.6, 1.6, 1.6]);
+  const cc = vor.circumcenters, { halfedges, triangles } = del, segs = [];
+  for (let e = 0; e < halfedges.length; e++) {
+    const o = halfedges[e]; if (o < e) continue;
+    const i = triangles[e], j = triangles[e % 3 === 2 ? e - 2 : e + 1];
+    if (pubs[i].topic === pubs[j].topic) continue;
+    const t1 = Math.floor(e / 3), mx = (pubs[i].x + pubs[j].x) / 2, my = (pubs[i].y + pubs[j].y) / 2;
+    let a = [cc[2 * t1], cc[2 * t1 + 1]], b;
+    if (o >= 0) { const t2 = Math.floor(o / 3); b = [cc[2 * t2], cc[2 * t2 + 1]]; }
+    else { const dx = pubs[j].y - pubs[i].y, dy = pubs[i].x - pubs[j].x, L = Math.hypot(dx, dy); b = [a[0] + dx / L * 0.6, a[1] + dy / L * 0.6]; }
+    const clamp = q => { const dx = q[0] - mx, dy = q[1] - my, d = Math.hypot(dx, dy), m = 0.42; return d > m ? [mx + dx / d * m, my + dy / d * m] : q; };
+    segs.push([clamp(a), clamp(b)]);
+  }
+  borders = segs;
+}
+computeBorders();
+
+// topic label anchors (centroid of the topic's papers)
+const labelPos = {};
+DATA.topics.forEach(t => { const ps = pubs.filter(p => p.topic === t.key);
+  labelPos[t.key] = { x: d3.mean(ps, p => p.x), y: d3.mean(ps, p => p.y) - (ps.length < 4 ? 0.09 : 0) }; });
+let labelBoxes = {};
+
+function resize() {
+  const r = cv.getBoundingClientRect(); W = r.width; H = r.height; DPR = Math.min(2, devicePixelRatio || 1);
+  cv.width = W * DPR; cv.height = H * DPR;
+  const gs = 0.5; glow.width = Math.max(1, Math.round(W * gs)); glow.height = Math.max(1, Math.round(H * gs));
+  const pad = W < 760 ? 34 : 90;
+  const ex = d3.extent(pubs, p => p.x), ey = d3.extent(pubs, p => p.y);
+  const top = W < 760 ? 70 : 110, bot = W < 760 ? 120 : 80;
+  base.s = Math.min((W - pad * 2) / (ex[1] - ex[0] + 0.25), (H - top - bot) / (ey[1] - ey[0] + 0.25));
+  base.x = W / 2 - base.s * (ex[0] + ex[1]) / 2; base.y = top + (H - top - bot) / 2 - base.s * (ey[0] + ey[1]) / 2;
+  draw();
+}
+
+function drawGlow(k) {
+  const gw = glow.width, gh = glow.height, f = gw / W;
+  gctx.setTransform(1, 0, 0, 1, 0, 0); gctx.clearRect(0, 0, gw, gh);
+  gctx.globalCompositeOperation = "lighter";
+  const rad = Math.max(1.2, 2.2 * Math.pow(k, 0.3)) * f * 2;
+  for (const d of dust) { if (!visible(d.p)) continue;
+    const x = T.applyX(base.x + d.x * base.s) * f, y = T.applyY(base.y + d.y * base.s) * f;
+    if (x < -20 || y < -20 || x > gw + 20 || y > gh + 20) continue;
+    gctx.fillStyle = `rgba(255,255,255,${0.05 * d.w})`; gctx.beginPath(); gctx.arc(x, y, rad, 0, 7); gctx.fill(); }
+  const R = 42 * Math.sqrt(k) * f * (W < 760 ? 0.75 : 1);
+  for (const p of pubs) { if (!visible(p)) continue;
+    const x = sx(p) * f, y = sy(p) * f, g = gctx.createRadialGradient(x, y, 0, x, y, R);
+    const a = p.type === "journal" ? 0.2 : 0.12;
+    g.addColorStop(0, `rgba(255,255,255,${a})`); g.addColorStop(1, "rgba(255,255,255,0)");
+    gctx.fillStyle = g; gctx.beginPath(); gctx.arc(x, y, R, 0, 7); gctx.fill(); }
+  const img = gctx.getImageData(0, 0, gw, gh), px = img.data;
+  for (let i = 0; i < px.length; i += 4) { const v = Math.min(255, 255 * (1 - Math.exp(-2.6 * px[i + 3] / 255))) | 0;
+    px[i] = LUT[v * 3]; px[i + 1] = LUT[v * 3 + 1]; px[i + 2] = LUT[v * 3 + 2]; px[i + 3] = 255; }
+  gctx.putImageData(img, 0, 0);
+}
+
+function focusSet() {
+  if (state.sel) { const s = new Set([state.sel.id, ...(growsInto[state.sel.id]||[]), ...(growsFrom[state.sel.id]||[])]); return s; }
+  if (state.person) return new Set(people[state.person].ids);
+  if (state.matches) return new Set(state.matches.map(p => p.id));
+  if (state.topic) return new Set(pubs.filter(p => p.topic === state.topic).map(p => p.id));
+  return null;
+}
+
+function draw() {
+  const k = T.k;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = css("--void"); ctx.fillRect(0, 0, W, H);
+  drawGlow(k);
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(glow, 0, 0, W, H);
+
+  // borders
+  ctx.lineWidth = 1; ctx.strokeStyle = "rgba(205,215,245,0.42)"; ctx.beginPath();
+  for (const [a, b] of borders) { ctx.moveTo(T.applyX(base.x + a[0] * base.s), T.applyY(base.y + a[1] * base.s)); ctx.lineTo(T.applyX(base.x + b[0] * base.s), T.applyY(base.y + b[1] * base.s)); }
+  ctx.stroke();
+
+  const F = focusSet();
+  // threads (conference -> journal / thesis lineage)
+  if (state.threads) for (const [a, b] of threads) {
+    const A = byId[a], B = byId[b]; if (!visible(A) || !visible(B)) continue;
+    const on = F && F.has(a) && F.has(b);
+    const x1 = sx(A), y1 = sy(A), x2 = sx(B), y2 = sy(B), mx = (x1 + x2) / 2, my = (y1 + y2) / 2, dx = x2 - x1, dy = y2 - y1;
+    const g = ctx.createLinearGradient(x1, y1, x2, y2); g.addColorStop(0, COL[A.type]); g.addColorStop(1, COL[B.type]);
+    ctx.globalAlpha = on ? 0.95 : (F ? 0.08 : 0.32); ctx.strokeStyle = g; ctx.lineWidth = on ? 2 : 1.2;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(mx - dy * 0.18, my + dx * 0.18, x2, y2); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // papers
+  const sz = Math.min(2.2, 0.85 + k * 0.28);
+  const order = [...pubs].sort((a, b) => TYPE_ORDER[b.type] - TYPE_ORDER[a.type]);
+  for (const p of order) { if (!visible(p)) continue;
+    const x = sx(p), y = sy(p); if (x < -20 || y < -20 || x > W + 20 || y > H + 20) continue;
+    const dim = F && !F.has(p.id); const hot = state.sel === p || state.hover === p;
+    ctx.globalAlpha = dim ? 0.22 : 1;
+    const r = (p.type === "journal" ? 5.2 : p.type === "thesis" ? 4.6 : 3.4) * sz;
+    if (p.type === "journal" && !dim) { ctx.shadowColor = COL.journal; ctx.shadowBlur = 12; }
+    ctx.fillStyle = COL[p.type]; ctx.beginPath();
+    if (p.type === "thesis") { ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath(); }
+    else ctx.arc(x, y, r, 0, 7);
+    ctx.fill(); ctx.shadowBlur = 0;
+    if (hot || (F && F.has(p.id) && (state.person || state.matches))) { ctx.lineWidth = 1.5; ctx.strokeStyle = "#fff"; ctx.beginPath(); ctx.arc(x, y, r + 4, 0, 7); ctx.stroke(); }
+  }
+  ctx.globalAlpha = 1;
+
+  // topic labels
+  labelBoxes = {};
+  const fs = W < 760 ? 10.5 : 12.5;
+  ctx.font = `600 ${fs}px Inter, system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const t of DATA.topics) {
+    const lp = labelPos[t.key], x = T.applyX(base.x + lp.x * base.s), y = T.applyY(base.y + lp.y * base.s);
+    const words = t.name.toUpperCase().split(" "), lines = []; let cur = "";
+    const maxw = W < 760 ? 120 : 190;
+    for (const w of words) { const tryL = cur ? cur + " " + w : w; if (ctx.measureText(tryL).width > maxw && cur) { lines.push(cur); cur = w; } else cur = tryL; }
+    lines.push(cur);
+    const lh = fs * 1.25, h = lines.length * lh, wmax = Math.max(...lines.map(l => ctx.measureText(l).width));
+    const dim = state.topic && state.topic !== t.key;
+    ctx.globalAlpha = dim ? 0.35 : 1;
+    lines.forEach((l, i) => { const ly = y - h / 2 + lh * (i + 0.5);
+      ctx.lineWidth = 4; ctx.strokeStyle = "rgba(6,11,28,0.85)"; ctx.strokeText(l, x, ly);
+      ctx.fillStyle = "#fff"; ctx.fillText(l, x, ly); });
+    labelBoxes[t.key] = { x0: x - wmax / 2 - 6, x1: x + wmax / 2 + 6, y0: y - h / 2 - 4, y1: y + h / 2 + 4 };
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---- zoom & pan ----
+const zoom = d3.zoom().scaleExtent([0.6, 9]).on("zoom", e => { T = e.transform; hideTip(); draw(); });
+const sel = d3.select(cv).call(zoom).on("dblclick.zoom", null);
+const dur = reduceMotion ? 0 : 650;
+function zoomToPubs(list) {
+  if (!list.length) return;
+  const xs = list.map(wx), ys = list.map(wy);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const panelW = document.getElementById("panel").classList.contains("open") && W >= 760 ? Math.min(420, W * 0.92) : 0;
+  const panelH = W < 760 && document.getElementById("panel").classList.contains("open") ? H * 0.68 : 0;
+  const aw = W - panelW, ah = H - panelH;
+  const k = Math.min(list.length < 3 ? 2.6 : 4, Math.max(1, 0.62 * Math.min(aw / Math.max(60, x1 - x0), ah / Math.max(60, y1 - y0))));
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  sel.transition().duration(dur).call(zoom.transform, d3.zoomIdentity.translate(aw / 2 - cx * k, ah / 2 - cy * k).scale(k));
+}
+document.getElementById("zin").onclick = () => sel.transition().duration(dur / 2).call(zoom.scaleBy, 1.5);
+document.getElementById("zout").onclick = () => sel.transition().duration(dur / 2).call(zoom.scaleBy, 1 / 1.5);
+document.getElementById("zfit").onclick = () => sel.transition().duration(dur).call(zoom.transform, d3.zoomIdentity);
+
+// ---- hit testing ----
+function nearest(mx, my, maxd = 14) {
+  let best = null, bd = maxd * maxd;
+  for (const p of pubs) { if (!visible(p)) continue; const dx = sx(p) - mx, dy = sy(p) - my, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = p; } }
+  return best;
+}
+function topicAt(mx, my) {
+  for (const [k, b] of Object.entries(labelBoxes)) if (mx >= b.x0 && mx <= b.x1 && my >= b.y0 && my <= b.y1) return k;
+  let best = null, bd = Infinity;
+  for (const p of pubs) { const dx = sx(p) - mx, dy = sy(p) - my, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = p; } }
+  return best && Math.sqrt(bd) < 0.32 * base.s * T.k ? best.topic : null;
+}
+const tip = document.getElementById("tip");
+function hideTip() { tip.classList.remove("on"); }
+cv.addEventListener("pointermove", e => {
+  if (e.pointerType === "touch") return;
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const p = nearest(mx, my);
+  const t = p ? null : topicAt(mx, my);
+  cv.classList.toggle("pointing", !!(p || (t && labelBoxes[t] && mx >= labelBoxes[t].x0 && mx <= labelBoxes[t].x1 && my >= labelBoxes[t].y0 && my <= labelBoxes[t].y1)));
+  if (p !== state.hover) { state.hover = p; draw(); }
+  if (p) {
+    tip.innerHTML = `<div class="k">${TYPE_LABEL[p.type]} · ${p.year}</div>${esc(p.title)}`;
+    const tw = Math.min(300, W - 24); let x = mx + 14, y = my + 14;
+    tip.classList.add("on"); const bb = tip.getBoundingClientRect();
+    if (x + bb.width > W - 8) x = mx - bb.width - 14; if (y + bb.height > H - 8) y = my - bb.height - 14;
+    tip.style.left = Math.max(8, x) + "px"; tip.style.top = Math.max(8, y) + "px";
+  } else hideTip();
+});
+cv.addEventListener("pointerleave", () => { state.hover = null; hideTip(); draw(); });
+let down = null;
+cv.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY]; });
+cv.addEventListener("click", e => {
+  if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const p = nearest(mx, my, e.pointerType === "touch" ? 22 : 14);
+  if (p) return openPaper(p, true);
+  const t = topicAt(mx, my);
+  if (t) return openTopic(t, true);
+  closePanel();
+});
+
+// ---- panel ----
+const panel = document.getElementById("panel"), pbody = document.getElementById("pbody"), crumb = document.getElementById("crumb"), backBtn = document.getElementById("back");
+const hist = [];
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function show(view, push = true) {
+  if (push && panel.classList.contains("open") && hist.length && hist[hist.length - 1].key !== view.key) {}
+  if (push) hist.push(view); backBtn.hidden = hist.length < 2;
+  crumb.textContent = view.crumb; pbody.innerHTML = view.html; pbody.scrollTop = 0;
+  panel.classList.add("open"); panel.setAttribute("aria-hidden", "false");
+  wire(); view.after && view.after();
+  draw();
+}
+function closePanel() {
+  hist.length = 0; panel.classList.remove("open"); panel.setAttribute("aria-hidden", "true");
+  Object.assign(state, { sel: null, topic: null, person: null, matches: null }); draw();
+}
+document.getElementById("close").onclick = closePanel;
+backBtn.onclick = () => { hist.pop(); const v = hist[hist.length - 1]; if (v) { v.restore(); show(v, false); } };
+addEventListener("keydown", e => { if (e.key === "Escape" && panel.classList.contains("open")) closePanel(); });
+
+function authorHTML(p) {
+  return p.authors.map(a => {
+    const name = esc(a.n);
+    if (a.me) return `<span class="a me">${name}</span>`;
+    if (a.slug) return `<span class="a"><a href="#" data-person="${a.slug}" title="All work by ${name}">${name}</a></span>`;
+    return `<span class="a">${name}</span>`;
+  }).join(", ");
+}
+function itemHTML(p) {
+  const au = p.authors.map(a => a.n.split(" ").pop()).join(", ");
+  return `<li><button data-pub="${p.id}"><span class="sw ${p.type}"></span><span class="t">${esc(p.title)}</span><span class="y">${p.year}</span><span class="s">${esc(au)} · ${esc(p.venue.split(",")[0])}</span></button></li>`;
+}
+function listByYear(list) {
+  const ys = d3.groups(list.sort((a, b) => b.year - a.year || TYPE_ORDER[a.type] - TYPE_ORDER[b.type]), p => p.year);
+  return ys.map(([y, ps]) => `<div class="yearhead">${y}</div><ul class="list">${ps.map(itemHTML).join("")}</ul>`).join("");
+}
+function typeSummary(list) {
+  return ["journal", "conference", "thesis"].map(t => { const n = list.filter(p => p.type === t).length; const plural = { journal: "journal articles", conference: "conference papers", thesis: "theses" };
+    return n ? `<span class="tag"><span class="sw ${t}"></span>${n} ${n > 1 ? plural[t] : TYPE_LABEL[t].toLowerCase()}</span>` : ""; }).join("");
+}
+function wire() {
+  pbody.querySelectorAll("[data-pub]").forEach(b => {
+    b.onclick = () => openPaper(byId[b.dataset.pub], true);
+    b.onmouseenter = () => { state.hover = byId[b.dataset.pub]; draw(); };
+    b.onmouseleave = () => { state.hover = null; draw(); };
+  });
+  pbody.querySelectorAll("[data-person]").forEach(b => b.onclick = e => { e.preventDefault(); openPerson(b.dataset.person, true); });
+  pbody.querySelectorAll("[data-topic]").forEach(b => b.onclick = () => openTopic(b.dataset.topic, true));
+}
+
+function openTopic(key, zoomIt) {
+  const t = topics[key], list = pubs.filter(p => p.topic === key);
+  const ppl = [...new Set(list.flatMap(p => p.authors.filter(a => a.slug).map(a => a.slug)))].map(s => people[s]);
+  const v = { key: "t:" + key, crumb: "Research area",
+    restore: () => Object.assign(state, { sel: null, topic: key, person: null, matches: null }),
+    html: `<h2>${esc(t.name)}</h2><div class="meta">${typeSummary(list)}</div><p>${esc(t.info)}</p>
+      ${ppl.length ? `<h3>Lab members in this area</h3><div class="people">${ppl.map(p => `<button data-person="${p.slug}">${esc(fullName(p.slug))}</button>`).join("")}</div>` : ""}
+      <h3>Publications</h3>${listByYear(list)}` };
+  v.restore(); show(v);
+  if (zoomIt) zoomToPubs(list.filter(visible));
+}
+function openPaper(p, zoomIt) {
+  const into = (growsInto[p.id] || []).map(i => byId[i]), from = (growsFrom[p.id] || []).map(i => byId[i]);
+  const rel = (p.rel || []).map(i => byId[i]).filter(r => r && !into.includes(r) && !from.includes(r));
+  const t = topics[p.topic];
+  const v = { key: "p:" + p.id, crumb: `${TYPE_LABEL[p.type]} · ${p.year}`,
+    restore: () => Object.assign(state, { sel: p, topic: null, person: null, matches: null }),
+    html: `<h2>${esc(p.title)}</h2>
+      <p class="authors">${authorHTML(p)}</p>
+      <div class="venue">${esc(p.venue)}</div>
+      <div class="meta"><span class="tag"><span class="sw ${p.type}"></span>${TYPE_LABEL[p.type]}</span><span>${p.year}</span></div>
+      <div class="btnrow">
+        ${p.doi ? `<a class="btn primary" href="https://doi.org/${esc(p.doi)}" target="_blank" rel="noopener">Read the paper ↗</a>` : ""}
+        <button class="topicchip" data-topic="${p.topic}">${esc(t.name)}</button>
+      </div>
+      ${p.doi ? `<div class="note">DOI ${esc(p.doi)}</div>` : ""}
+      ${from.length ? `<h3>Grew out of</h3><ul class="list">${from.map(itemHTML).join("")}</ul>` : ""}
+      ${into.length ? `<h3>Developed further in</h3><ul class="list">${into.map(itemHTML).join("")}</ul>` : ""}
+      ${rel.length ? `<h3>Related work</h3><ul class="list">${rel.map(itemHTML).join("")}</ul>` : ""}` };
+  v.restore(); show(v);
+  if (zoomIt) zoomToPubs([p, ...into, ...from].filter(visible));
+}
+const FULL = { "david-schwab": "David Schwab", "jonathon-hope": "Jonathon Hope", "jack-li": "Jack Li", "vivek-verma": "Vivek Verma",
+  "evan-lantier": "Evan Lantier", "mackenzie-mangette": "Mackenzie Mangette", "sasidhar-devabhaktuni": "Sasidhar Devabhaktuni",
+  "joseph-messner": "Joseph Messner", "christopher-cosgrove": "Christopher Cosgrove", "graeme-sutterlin": "Graeme Sutterlin",
+  "joseph-murray": "Joseph Murray", "carson-hunsberger": "Carson Hunsberger", "diya-rays": "Diya Rays", "daniel-romero": "Daniel Romero", "audra-robinson": "Audra Robinson" };
+const fullName = s => FULL[s] || people[s].n;
+function openPerson(slug, zoomIt) {
+  const pp = people[slug]; if (!pp) return;
+  const list = pp.ids.map(i => byId[i]);
+  const v = { key: "u:" + slug, crumb: "Lab member",
+    restore: () => Object.assign(state, { sel: null, topic: null, person: slug, matches: null }),
+    html: `<h2>${esc(fullName(slug))}</h2><div class="meta">${typeSummary(list)}</div>
+      <div class="btnrow"><a class="btn" href="${MEMBERS}#${slug}" target="_top">Profile on the Members page ↗</a></div>
+      <h3>Work on the map</h3>${listByYear(list)}` };
+  v.restore(); show(v);
+  if (zoomIt) zoomToPubs(list.filter(visible));
+}
+function openList() {
+  const list = pubs.filter(visible);
+  const v = { key: "all", crumb: "All publications",
+    restore: () => Object.assign(state, { sel: null, topic: null, person: null, matches: null }),
+    html: `<h2>All publications</h2><div class="meta">${typeSummary(list)}</div>
+      ${DATA.topics.map(t => { const l = list.filter(p => p.topic === t.key); return l.length ? `<h3><button class="topicchip" data-topic="${t.key}">${esc(t.name)}</button></h3>${listByYear(l)}` : ""; }).join("")}` };
+  v.restore(); show(v);
+}
+document.getElementById("listBtn").onclick = openList;
+
+// ---- search ----
+const q = document.getElementById("q");
+let qTimer;
+q.addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(runSearch, 160); });
+q.addEventListener("keydown", e => { if (e.key === "Enter") { clearTimeout(qTimer); runSearch(true); } });
+function runSearch(zoomIt) {
+  const s = q.value.trim().toLowerCase();
+  if (!s) { if (state.matches) closePanel(); return; }
+  const terms = s.split(/\s+/);
+  const list = pubs.filter(p => visible(p) && terms.every(t => (p.title + " " + p.venue + " " + p.authors.map(a => a.n + " " + (FULL[a.slug] || "")).join(" ") + " " + topics[p.topic].name).toLowerCase().includes(t)));
+  const v = { key: "s", crumb: "Search",
+    restore: () => Object.assign(state, { sel: null, topic: null, person: null, matches: list }),
+    html: `<h2>${list.length} result${list.length === 1 ? "" : "s"} for “${esc(q.value.trim())}”</h2><div class="meta">${typeSummary(list)}</div>
+      ${list.length ? listByYear(list) : `<p>No titles, authors or venues match. Try a broader word such as “cislunar” or a last name.</p>`}` };
+  hist.length = 0; v.restore(); show(v);
+  if (zoomIt && list.length) zoomToPubs(list);
+}
+
+// ---- filters ----
+document.querySelectorAll(".chip[data-type]").forEach(b => b.onclick = () => {
+  const t = b.dataset.type, on = state.types.has(t);
+  if (on && state.types.size === 1) return;
+  on ? state.types.delete(t) : state.types.add(t); b.setAttribute("aria-pressed", String(!on)); draw();
+});
+document.getElementById("threadBtn").onclick = e => { state.threads = !state.threads; e.currentTarget.setAttribute("aria-pressed", String(state.threads)); draw(); };
+const yr = document.getElementById("yr"), yrOut = document.getElementById("yrOut");
+function setYear(y) { state.year = y; yr.value = y; yrOut.textContent = y >= 2026 ? "All time" : `2014 – ${y}`; draw(); }
+yr.oninput = () => setYear(+yr.value);
+let playing = null;
+document.getElementById("play").onclick = () => {
+  if (playing) { clearInterval(playing); playing = null; setYear(2026); return; }
+  let y = 2014; setYear(y);
+  playing = setInterval(() => { y++; setYear(y); if (y >= 2026) { clearInterval(playing); playing = null; } }, reduceMotion ? 120 : 520);
+};
+
+// ---- boot ----
+new ResizeObserver(resize).observe(cv);
+resize();
+function fromHash() {
+  const h = decodeURIComponent(location.hash.slice(1));
+  if (!h) return;
+  if (people[h]) openPerson(h, true);
+  else if (topics[h.toUpperCase()]) openTopic(h.toUpperCase(), true);
+  else if (byId[h.toUpperCase()]) openPaper(byId[h.toUpperCase()], true);
+}
+addEventListener("hashchange", fromHash);
+setTimeout(fromHash, 60);
+</script>
+</body>
+</html>
